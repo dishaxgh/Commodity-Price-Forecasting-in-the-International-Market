@@ -2,7 +2,7 @@ streamlit
 fastapi
 uvicorn
 yfinance
-tensorflow
+tensorflow-cpu
 statsmodels
 scikit-learn
 joblib
