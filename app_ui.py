@@ -5,9 +5,10 @@ st.set_page_config(
     page_title="Commodity Price Forecasting", page_icon="📈", layout="centered"
 )
 
-st.title("🌾 Brent Oil & Agricultural Commodity Price Forecaster")
+st.title("🌾 Commodity Price Forecaster")
 st.write(
-    "Hybrid Ensemble Model (ARIMAX + LSTM Residuals) serving real-time predictions."
+    "Hybrid Ensemble Model (ARIMAX + LSTM Residuals) serving real-time"
+    " predictions."
 )
 
 # Commodity selector
@@ -18,7 +19,6 @@ commodity = st.selectbox(
 if st.button("Generate Next-Day Prediction"):
   with st.spinner("Fetching latest data and running hybrid model..."):
     try:
-      # Calls your FastAPI backend endpoint
       response = requests.post(f"http://127.0.0.1:8000/predict/{commodity}")
 
       if response.status_code == 200:
