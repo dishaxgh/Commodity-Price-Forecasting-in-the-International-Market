@@ -18,7 +18,7 @@ st.write(
 
 COMMODITIES = {
     "Brent Oil": "Model Artifacts/Brent Oil",
-    "US Soybeans": "Model Artifacts/US Soybeans",
+    "US Soybeans": "Model Artifacts/US Soyabeans",
     "US Wheat": "Model Artifacts/US Wheat",
 }
 LOOKBACK_WINDOW = 14
