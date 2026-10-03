@@ -1,4 +1,4 @@
-# Commodity Price Forecasting in the International Market — Research Archive 
+# Commodity Price Forecasting in the International Market - Research Archive 
 
 This directory houses the foundational exploratory data analysis and individual baseline models developed during the early research phase of the project (pre-MLOps upgrade). It contains individual Jupyter notebooks testing various machine learning, deep learning, and statistical time-series models across international agricultural and energy commodities (*Brent Oil*, *US Soybeans*, and *US Wheat*).
 
