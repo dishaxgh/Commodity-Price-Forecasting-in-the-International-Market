@@ -4,6 +4,7 @@ import numpy as np
 import os
 import pandas as pd
 import tensorflow as tf
+from statsmodels.tsa.arima.model import ARIMAResults
 
 app = FastAPI(title="Commodity Price Forecasting API", version="1.0")
 
@@ -20,7 +21,7 @@ for name, folder in COMMODITIES.items():
   if os.path.exists(folder):
     try:
       models[name] = {
-          "arimax": joblib.load(os.path.join(folder, "arimax_model.pkl")),
+          "arimax": ARIMAResults.load(os.path.join(folder, "arimax_model.pkl")),
           "lstm": tf.keras.models.load_model(
               os.path.join(folder, "lstm_residual_model.keras")
           ),
@@ -62,10 +63,10 @@ def predict_next_price(commodity_name: str):
       [[last_row["SMA_14"], last_row["Std_14"]]], columns=["SMA_14", "Std_14"]
   )
 
-  # 1. ARIMAX prediction
+  # 1. ARIMAX prediction for the next step
   arimax_pred = arimax_model.forecast(steps=1, exog=exog_pred).iloc[0]
 
-  # 2. LSTM residual prediction
+  # 2. LSTM residual prediction using the lookback window
   recent_prices = df["Price"].values[-LOOKBACK_WINDOW:]
   fitted_vals = arimax_model.fittedvalues.tail(LOOKBACK_WINDOW).values
   recent_residuals = (recent_prices - fitted_vals).reshape(-1, 1)
