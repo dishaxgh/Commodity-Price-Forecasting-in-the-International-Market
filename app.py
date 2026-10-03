@@ -1,12 +1,20 @@
-from fastapi import FastAPI, HTTPException
+import os
 import joblib
 import numpy as np
-import os
 import pandas as pd
+import streamlit as st
 import tensorflow as tf
 from statsmodels.tsa.arima.model import ARIMAResults
 
-app = FastAPI(title="Commodity Price Forecasting API", version="1.0")
+st.set_page_config(
+    page_title="Commodity Price Forecasting", page_icon="📈", layout="centered"
+)
+
+st.title("Commodity Price Forecaster")
+st.write(
+    "Hybrid Ensemble Model (ARIMAX + LSTM Residuals) running live in the"
+    " cloud."
+)
 
 COMMODITIES = {
     "Brent Oil": "Brent Oil",
@@ -15,74 +23,77 @@ COMMODITIES = {
 }
 LOOKBACK_WINDOW = 14
 
-# Load models into memory on startup
-models = {}
-for name, folder in COMMODITIES.items():
-  if os.path.exists(folder):
-    try:
-      models[name] = {
-          "arimax": ARIMAResults.load(os.path.join(folder, "arimax_model.pkl")),
-          "lstm": tf.keras.models.load_model(
-              os.path.join(folder, "lstm_residual_model.keras")
-          ),
-          "scaler": joblib.load(os.path.join(folder, "minmax_scaler.pkl")),
-          "data": pd.read_csv(os.path.join(folder, "latest_historical_data.csv")),
-      }
-    except Exception as e:
-      print(f"Error loading artifacts for {name}: {e}")
+
+# Load models with caching so they only load once
+@st.cache_resource
+def load_models():
+  loaded_models = {}
+  for name, folder in COMMODITIES.items():
+    if os.path.exists(folder):
+      try:
+        loaded_models[name] = {
+            "arimax": ARIMAResults.load(os.path.join(folder, "arimax_model.pkl")),
+            "lstm": tf.keras.models.load_model(
+                os.path.join(folder, "lstm_residual_model.keras")
+            ),
+            "scaler": joblib.load(os.path.join(folder, "minmax_scaler.pkl")),
+            "data": pd.read_csv(
+                os.path.join(folder, "latest_historical_data.csv")
+            ),
+        }
+      except Exception as e:
+        st.error(f"Error loading artifacts for {name}: {e}")
+  return loaded_models
 
 
-@app.get("/")
-def home():
-  return {
-      "message": "Commodity Price Forecasting API is running.",
-      "available_commodities": list(models.keys()),
-  }
+models = load_models()
 
+# Commodity selector dropdown
+commodity = st.selectbox(
+    "Select Commodity", list(models.keys()) if models else []
+)
 
-@app.post("/predict/{commodity_name}")
-def predict_next_price(commodity_name: str):
-  if commodity_name not in models:
-    raise HTTPException(
-        status_code=404, detail=f"Commodity '{commodity_name}' not found."
-    )
+if st.button("Generate Next-Day Prediction"):
+  if not models or commodity not in models:
+    st.error("Model artifacts not found or failed to load.")
+  else:
+    with st.spinner("Running hybrid forecasting model..."):
+      m = models[commodity]
+      df = m["data"]
+      arimax_model = m["arimax"]
+      lstm_model = m["lstm"]
+      scaler = m["scaler"]
 
-  m = models[commodity_name]
-  df = m["data"]
-  arimax_model = m["arimax"]
-  lstm_model = m["lstm"]
-  scaler = m["scaler"]
+      last_row = df.iloc[-1]
+      exog_pred = pd.DataFrame(
+          [[last_row["SMA_14"], last_row["Std_14"]]],
+          columns=["SMA_14", "Std_14"],
+      )
 
-  if len(df) < LOOKBACK_WINDOW:
-    raise HTTPException(
-        status_code=400, detail="Insufficient historical data for inference."
-    )
+      # 1. ARIMAX prediction
+      arimax_pred = arimax_model.forecast(steps=1, exog=exog_pred).iloc[0]
 
-  last_row = df.iloc[-1]
-  exog_pred = pd.DataFrame(
-      [[last_row["SMA_14"], last_row["Std_14"]]], columns=["SMA_14", "Std_14"]
-  )
+      # 2. LSTM residual prediction
+      recent_prices = df["Price"].values[-LOOKBACK_WINDOW:]
+      fitted_vals = arimax_model.fittedvalues.tail(LOOKBACK_WINDOW).values
+      recent_residuals = (recent_prices - fitted_vals).reshape(-1, 1)
 
-  # 1. ARIMAX prediction for the next step
-  arimax_pred = arimax_model.forecast(steps=1, exog=exog_pred).iloc[0]
+      scaled_res = scaler.transform(recent_residuals)
+      X_input = np.reshape(scaled_res, (1, LOOKBACK_WINDOW, 1))
 
-  # 2. LSTM residual prediction using the lookback window
-  recent_prices = df["Price"].values[-LOOKBACK_WINDOW:]
-  fitted_vals = arimax_model.fittedvalues.tail(LOOKBACK_WINDOW).values
-  recent_residuals = (recent_prices - fitted_vals).reshape(-1, 1)
+      scaled_pred_res = lstm_model.predict(X_input, verbose=0)
+      lstm_pred = scaler.inverse_transform(scaled_pred_res)[0][0]
 
-  scaled_res = scaler.transform(recent_residuals)
-  X_input = np.reshape(scaled_res, (1, LOOKBACK_WINDOW, 1))
+      # 3. Combine hybrid prediction
+      final_prediction = float(arimax_pred + lstm_pred)
 
-  scaled_pred_res = lstm_model.predict(X_input, verbose=0)
-  lstm_pred = scaler.inverse_transform(scaled_pred_res)[0][0]
+      st.success("Prediction generated successfully!")
 
-  # 3. Combine hybrid prediction
-  final_prediction = float(arimax_pred + lstm_pred)
-
-  return {
-      "commodity": commodity_name,
-      "last_date": str(last_row["Date"]),
-      "last_price": float(last_row["Price"]),
-      "predicted_next_price": round(final_prediction, 2),
-  }
+      col1, col2, col3 = st.columns(3)
+      col1.metric("Last Date", str(last_row["Date"]))
+      col2.metric("Last Price", f"${float(last_row['Price']):.2f}")
+      col3.metric(
+          "Predicted Next Price",
+          f"${final_prediction:.2f}",
+          delta=f"{round(final_prediction - float(last_row['Price']), 2)}",
+      )
