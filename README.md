@@ -62,4 +62,5 @@ Commodity-Price-Forecasting-in-the-International-Market/
 ├── train.py                     # Monolithic training & pipeline generation script
 ├── app.py                       # Unified Streamlit Cloud deployment script
 ├── requirements.txt             # Project dependencies
+├── Overview for Models.txt      # Mathematical explanation for Model
 └── README.md                    # Project documentation
